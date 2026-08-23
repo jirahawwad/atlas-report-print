@@ -1,0 +1,6 @@
+@Atlas.Report.Print_HostAddress = http://localhost:5095
+
+GET {{Atlas.Report.Print_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
