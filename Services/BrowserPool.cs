@@ -50,14 +50,16 @@ public sealed class BrowserPool : IBrowserPool, IHostedService, IAsyncDisposable
 		_logger.LogInformation("Playwright Chromium browser launched for Atlas.Report.Print.");
 	}
 
-	public async Task StopAsync(CancellationToken cancellationToken)
+	public Task StopAsync(CancellationToken cancellationToken)
 	{
-		if (_browser is not null)
-		{
-			await _browser.CloseAsync();
-		}
-
-		_logger.LogInformation("Playwright Chromium browser stopped.");
+		// Deliberately a no-op — BrowserPool is registered as both a hosted service
+		// (StopAsync runs on host shutdown) and a DI singleton (DisposeAsync runs
+		// when the service provider tears down). Both fire during shutdown; tearing
+		// the browser down here as well as in DisposeAsync caused a double-close —
+		// the second call threw ObjectDisposedException on Playwright's internal
+		// transport semaphore, since it isn't built to be shut down twice.
+		// DisposeAsync is the single, sufficient teardown path.
+		return Task.CompletedTask;
 	}
 
 	public async Task<IPage> AcquirePageAsync(CancellationToken cancellationToken = default)

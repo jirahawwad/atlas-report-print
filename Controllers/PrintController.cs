@@ -46,15 +46,26 @@ public sealed class PrintController : ControllerBase
 			return BadRequest("Request body is required.");
 		}
 
-		if (string.IsNullOrWhiteSpace(request.HtmlPayload))
+		bool hasInlineBody = !string.IsNullOrWhiteSpace(request.HtmlPayload);
+		bool hasFileBody = !string.IsNullOrWhiteSpace(request.BodyHtmlFile) && !string.IsNullOrWhiteSpace(request.JobDirectory);
+
+		if (!hasInlineBody && !hasFileBody)
 		{
-			return BadRequest("HtmlPayload is required.");
+			return BadRequest("Either HtmlPayload or JobDirectory+BodyHtmlFile is required.");
 		}
 
 		try
 		{
-			string base64Document = await _renderer.RenderAsync(request, cancellationToken);
-			return Ok(new PrintResponse { Base64Document = base64Document });
+			PdfRenderResult result = await _renderer.RenderAsync(request, cancellationToken);
+			return Ok(new PrintResponse { Base64Document = result.Base64Document, PdfPath = result.PdfPath });
+		}
+		catch (ArgumentException ex)
+		{
+			return BadRequest(ex.Message);
+		}
+		catch (FileNotFoundException ex)
+		{
+			return NotFound(ex.Message);
 		}
 		catch (OperationCanceledException)
 		{

@@ -1,0 +1,21 @@
+[Unit]
+Description=Atlas.Report.Print - Playwright-based PDF print service (DEV)
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/global/toh/atlas-report-print/app
+ExecStart=/usr/bin/dotnet /global/toh/atlas-report-print/app/Atlas.Report.Print.dll
+Restart=on-failure
+RestartSec=5
+
+# ASPNETCORE_ENVIRONMENT=DEV picks up appsettings.DEV.json (layered over appsettings.json).
+Environment=ASPNETCORE_ENVIRONMENT=DEV
+
+Environment=PLAYWRIGHT_BROWSERS_PATH=/global/toh/atlas-report-print/browsers
+
+User=toh
+Group=toh
+
+[Install]
+WantedBy=multi-user.target

@@ -15,6 +15,8 @@ try
 
 	WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+	builder.Host.UseSystemd();
+
 	// Note: no builder.Host.UseWindowsService() — this service is hosted via
 	// Kestrel + systemd on RHEL, not IIS/Windows Service.
 	builder.Host.UseSerilog((ctx, services, lc) =>
@@ -37,6 +39,9 @@ try
 	builder.Services.AddSingleton<PlaywrightPrintRenderer>();
 
 	WebApplication app = builder.Build();
+
+	Log.Information("Atlas.Report.Print starting — ASPNETCORE_ENVIRONMENT={Environment}", builder.Environment.EnvironmentName);
+
 	app.UseSwagger();
 	app.UseSwaggerUI(c =>
 	{

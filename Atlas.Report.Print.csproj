@@ -6,7 +6,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<RootNamespace>Atlas.Report.Print</RootNamespace>
 		<AssemblyName>Atlas.Report.Print</AssemblyName>
-		<Configurations>Debug;Release;LOCAL</Configurations>
+		<Configurations>LOCAL;DEV;QA;PROD</Configurations>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -19,7 +19,8 @@
 	<ItemGroup>
 		<!-- Note: Microsoft.Extensions.Hosting.WindowsServices intentionally omitted —
          this service is hosted via Kestrel + systemd on RHEL, not IIS/Windows Service. -->
-		<PackageReference Include="Microsoft.Playwright" Version="1.44.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Playwright" Version="1.62.0" />
 		<PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
 		<PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
 		<PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
@@ -27,6 +28,15 @@
 		<PackageReference Include="Serilog.Enrichers.Process" Version="2.0.2" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.9.0" />
 		<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="6.9.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="deploy-service.sh"
+		      CopyToPublishDirectory="Always" />
+
+		<None Update="atlas-report-print-$(Configuration).service"
+		      CopyToPublishDirectory="Always"
+		      Condition="Exists('atlas-report-print-$(Configuration).service')" />
 	</ItemGroup>
 
 </Project>

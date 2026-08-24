@@ -24,9 +24,11 @@ public sealed class PlaywrightPrintRenderer(
 	private readonly ILogger<PlaywrightPrintRenderer> _logger = logger;
 
 	/// <summary>
-	/// Renders the given <see cref="PrintRequest"/> to a Base64-encoded PDF.
+	/// Renders the given <see cref="PrintRequest"/>. Returns either a base64-encoded
+	/// PDF, or writes the PDF directly to <c>JobDirectory/PdfFile</c> and returns
+	/// that path, depending on which output mode the request specifies.
 	/// </summary>
-	public async Task<string> RenderAsync(
+	public async Task<PdfRenderResult> RenderAsync(
 		PrintRequest request,
 		CancellationToken cancellationToken = default)
 	{
@@ -36,6 +38,20 @@ public sealed class PlaywrightPrintRenderer(
 		}
 
 		cancellationToken.ThrowIfCancellationRequested();
+
+		string bodyHtml = await ResolveContentAsync(
+			request.JobDirectory, request.BodyHtmlFile, request.HtmlPayload,
+			fieldName: "body", required: true);
+
+		string? headerHtml = await ResolveContentAsync(
+			request.JobDirectory, request.HeaderHtmlFile, request.HeaderHtml,
+			fieldName: "header", required: false);
+
+		string? footerHtml = await ResolveContentAsync(
+			request.JobDirectory, request.FooterHtmlFile, request.FooterHtml,
+			fieldName: "footer", required: false);
+
+		bool writeToFile = !string.IsNullOrWhiteSpace(request.JobDirectory) && !string.IsNullOrWhiteSpace(request.PdfFile);
 
 		IPage? page = null;
 		bool slotAcquired = false;
@@ -47,12 +63,12 @@ public sealed class PlaywrightPrintRenderer(
 
 			cancellationToken.ThrowIfCancellationRequested();
 
-			await page.SetContentAsync(request.HtmlPayload, new PageSetContentOptions
+			await page.SetContentAsync(bodyHtml, new PageSetContentOptions
 			{
 				WaitUntil = WaitUntilState.NetworkIdle
 			});
 
-			// Belt-and-suspenders: covers any background colors in HtmlPayload itself,
+			// Belt-and-suspenders: covers any background colors in the body HTML itself,
 			// on top of the <style> block prepended to header/footer below.
 			await page.AddStyleTagAsync(new PageAddStyleTagOptions { Content = ColorAdjustInlineStyle });
 
@@ -60,8 +76,8 @@ public sealed class PlaywrightPrintRenderer(
 
 			bool isLandscape = request.PrintFormat.Equals("LANDSCAPE", StringComparison.OrdinalIgnoreCase);
 
-			string? headerTemplate = request.HeaderHtml is null ? null : ColorAdjustStyle + request.HeaderHtml;
-			string? footerTemplate = request.FooterHtml is null ? null : ColorAdjustStyle + request.FooterHtml;
+			string? headerTemplate = headerHtml is null ? null : ColorAdjustStyle + headerHtml;
+			string? footerTemplate = footerHtml is null ? null : ColorAdjustStyle + footerHtml;
 
 			PagePdfOptions options = new()
 			{
@@ -81,14 +97,21 @@ public sealed class PlaywrightPrintRenderer(
 			};
 
 			byte[] pdfBytes = await page.PdfAsync(options);
-			string base64 = Convert.ToBase64String(pdfBytes);
 
 			_logger.LogInformation(
-				"PlaywrightPrintRenderer|method:{Method}|pdfBytes:{PdfBytes}",
+				"PlaywrightPrintRenderer|method:{Method}|pdfBytes:{PdfBytes}|writeToFile:{WriteToFile}",
 				nameof(RenderAsync),
-				pdfBytes.Length);
+				pdfBytes.Length,
+				writeToFile);
 
-			return base64;
+			if (writeToFile)
+			{
+				string pdfPath = Path.Combine(request.JobDirectory!, request.PdfFile!);
+				await File.WriteAllBytesAsync(pdfPath, pdfBytes, cancellationToken);
+				return new PdfRenderResult { PdfPath = pdfPath };
+			}
+
+			return new PdfRenderResult { Base64Document = Convert.ToBase64String(pdfBytes) };
 		}
 		catch (Exception ex)
 		{
@@ -112,5 +135,42 @@ public sealed class PlaywrightPrintRenderer(
 				_browserPool.ReleasePage();
 			}
 		}
+	}
+
+	/// <summary>
+	/// Resolves a single piece of content (body/header/footer) from either a file
+	/// (when <paramref name="fileName"/> and <paramref name="jobDirectory"/> are both
+	/// set) or inline content, preferring the file if both are provided.
+	/// </summary>
+	private static async Task<string?> ResolveContentAsync(
+		string? jobDirectory, string? fileName, string? inlineContent, string fieldName, bool required)
+	{
+		if (!string.IsNullOrWhiteSpace(fileName))
+		{
+			if (string.IsNullOrWhiteSpace(jobDirectory))
+			{
+				throw new ArgumentException($"{fieldName}: JobDirectory is required when {fieldName} is specified by filename.");
+			}
+
+			string path = Path.Combine(jobDirectory, fileName);
+			if (!File.Exists(path))
+			{
+				throw new FileNotFoundException($"{fieldName} HTML file not found: {path}", path);
+			}
+
+			return await File.ReadAllTextAsync(path);
+		}
+
+		if (!string.IsNullOrWhiteSpace(inlineContent))
+		{
+			return inlineContent;
+		}
+
+		if (required)
+		{
+			throw new ArgumentException($"{fieldName}: either an inline value or a JobDirectory+filename pair is required.");
+		}
+
+		return null;
 	}
 }
