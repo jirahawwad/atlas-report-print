@@ -38,9 +38,29 @@ try
 	builder.Services.AddHostedService(sp => sp.GetRequiredService<BrowserPool>());
 	builder.Services.AddSingleton<PlaywrightPrintRenderer>();
 
+	// Decompresses gzip-encoded request bodies before JSON model binding — the Java
+	// client compresses inline-mode HTML payloads, since HTML compresses very well.
+	// No controller/DTO changes needed; this happens transparently in the pipeline.
+	builder.Services.AddRequestDecompression();
+
+	// Compresses outgoing responses. Lower payoff than the request side, since the
+	// response body is mostly an already-compressed base64 PDF, but effectively free
+	// to enable. Explicitly include application/json since it's not always in the
+	// default MIME type list depending on framework version.
+	builder.Services.AddResponseCompression(options =>
+	{
+		options.MimeTypes = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults.MimeTypes
+			.Concat(new[] { "application/json" });
+	});
+
 	WebApplication app = builder.Build();
 
 	Log.Information("Atlas.Report.Print starting — ASPNETCORE_ENVIRONMENT={Environment}", builder.Environment.EnvironmentName);
+
+	// Both must run early in the pipeline, before anything reads the request body
+	// or writes the response.
+	app.UseRequestDecompression();
+	app.UseResponseCompression();
 
 	app.UseSwagger();
 	app.UseSwaggerUI(c =>

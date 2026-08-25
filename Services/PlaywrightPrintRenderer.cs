@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using Atlas.Report.Print.Domain;
 
 using Microsoft.Playwright;
@@ -39,6 +41,9 @@ public sealed class PlaywrightPrintRenderer(
 
 		cancellationToken.ThrowIfCancellationRequested();
 
+		Stopwatch totalStopwatch = Stopwatch.StartNew();
+		Stopwatch resolveStopwatch = Stopwatch.StartNew();
+
 		string bodyHtml = await ResolveContentAsync(
 			request.JobDirectory, request.BodyHtmlFile, request.HtmlPayload,
 			fieldName: "body", required: true);
@@ -51,7 +56,10 @@ public sealed class PlaywrightPrintRenderer(
 			request.JobDirectory, request.FooterHtmlFile, request.FooterHtml,
 			fieldName: "footer", required: false);
 
+		resolveStopwatch.Stop();
+
 		bool writeToFile = !string.IsNullOrWhiteSpace(request.JobDirectory) && !string.IsNullOrWhiteSpace(request.PdfFile);
+		bool isInlineContent = string.IsNullOrWhiteSpace(request.BodyHtmlFile);
 
 		IPage? page = null;
 		bool slotAcquired = false;
@@ -63,6 +71,8 @@ public sealed class PlaywrightPrintRenderer(
 
 			cancellationToken.ThrowIfCancellationRequested();
 
+			Stopwatch setContentStopwatch = Stopwatch.StartNew();
+
 			await page.SetContentAsync(bodyHtml, new PageSetContentOptions
 			{
 				WaitUntil = WaitUntilState.NetworkIdle
@@ -71,6 +81,8 @@ public sealed class PlaywrightPrintRenderer(
 			// Belt-and-suspenders: covers any background colors in the body HTML itself,
 			// on top of the <style> block prepended to header/footer below.
 			await page.AddStyleTagAsync(new PageAddStyleTagOptions { Content = ColorAdjustInlineStyle });
+
+			setContentStopwatch.Stop();
 
 			cancellationToken.ThrowIfCancellationRequested();
 
@@ -96,13 +108,22 @@ public sealed class PlaywrightPrintRenderer(
 				}
 			};
 
+			Stopwatch pdfStopwatch = Stopwatch.StartNew();
 			byte[] pdfBytes = await page.PdfAsync(options);
+			pdfStopwatch.Stop();
+
+			totalStopwatch.Stop();
 
 			_logger.LogInformation(
-				"PlaywrightPrintRenderer|method:{Method}|pdfBytes:{PdfBytes}|writeToFile:{WriteToFile}",
+				"PlaywrightPrintRenderer|method:{Method}|pdfBytes:{PdfBytes}|writeToFile:{WriteToFile}|isInlineContent:{IsInlineContent}|resolveMs:{ResolveMs}|setContentMs:{SetContentMs}|pdfGenMs:{PdfGenMs}|totalMs:{TotalMs}",
 				nameof(RenderAsync),
 				pdfBytes.Length,
-				writeToFile);
+				writeToFile,
+				isInlineContent,
+				resolveStopwatch.ElapsedMilliseconds,
+				setContentStopwatch.ElapsedMilliseconds,
+				pdfStopwatch.ElapsedMilliseconds,
+				totalStopwatch.ElapsedMilliseconds);
 
 			if (writeToFile)
 			{

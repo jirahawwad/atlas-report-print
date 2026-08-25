@@ -49,6 +49,15 @@ public sealed class PrintController : ControllerBase
 		bool hasInlineBody = !string.IsNullOrWhiteSpace(request.HtmlPayload);
 		bool hasFileBody = !string.IsNullOrWhiteSpace(request.BodyHtmlFile) && !string.IsNullOrWhiteSpace(request.JobDirectory);
 
+		_logger.LogInformation(
+			"PrintController|method:{Method}|request received|isInline:{IsInline}|bodyChars:{BodyChars}|headerChars:{HeaderChars}|footerChars:{FooterChars}|printFormat:{PrintFormat}",
+			nameof(Generate),
+			hasInlineBody,
+			request.HtmlPayload?.Length ?? 0,
+			request.HeaderHtml?.Length ?? 0,
+			request.FooterHtml?.Length ?? 0,
+			request.PrintFormat);
+
 		if (!hasInlineBody && !hasFileBody)
 		{
 			return BadRequest("Either HtmlPayload or JobDirectory+BodyHtmlFile is required.");
