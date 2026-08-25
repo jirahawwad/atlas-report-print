@@ -17,6 +17,19 @@ try
 
 	builder.Host.UseSystemd();
 
+	// Explicit, in-code Kestrel limit — the equivalent appsettings.json
+	// "Kestrel:Limits:MaxRequestBodySize" setting was confirmed present and correctly
+	// deployed, service confirmed restarted, yet the decompression middleware's
+	// SizeLimitedStream (which shares this same limit per Microsoft's own docs) still
+	// enforced the old ~28.6MB default. Root cause of the JSON-config path not taking
+	// effect wasn't conclusively identified; setting it directly in code sidesteps
+	// that uncertainty rather than continuing to trust configuration-binding behavior
+	// that's demonstrably not working as expected here.
+	builder.WebHost.ConfigureKestrel(serverOptions =>
+	{
+		serverOptions.Limits.MaxRequestBodySize = 262_144_000; // 250MB
+	});
+
 	// Note: no builder.Host.UseWindowsService() — this service is hosted via
 	// Kestrel + systemd on RHEL, not IIS/Windows Service.
 	builder.Host.UseSerilog((ctx, services, lc) =>
@@ -31,6 +44,18 @@ try
 	builder.Services.AddSwaggerGen(c =>
 	{
 		c.SwaggerDoc("v1", new OpenApiInfo { Title = "Atlas.Report.Print API", Version = "v1" });
+	});
+
+	// The default 5s shutdown timeout can cut off Playwright's async browser-close
+	// mid-flight — BrowserPool.DisposeAsync() has to round-trip a message to the
+	// underlying Node.js driver process, which can genuinely take longer than that
+	// under normal teardown overhead. If the host abandons shutdown while that's
+	// still in-flight, something else in the pipeline can dispose the underlying
+	// connection out from under it, throwing ObjectDisposedException on Playwright's
+	// own internal semaphore rather than completing cleanly.
+	builder.Services.Configure<HostOptions>(options =>
+	{
+		options.ShutdownTimeout = TimeSpan.FromSeconds(30);
 	});
 
 	builder.Services.AddSingleton<BrowserPool>();

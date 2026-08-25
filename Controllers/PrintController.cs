@@ -29,15 +29,17 @@ public sealed class PrintController : ControllerBase
 		_logger = logger;
 	}
 
-	/// <summary>
-	/// Renders the supplied HTML (body + optional header/footer) to a PDF and
-	/// returns it as a Base64-encoded document.
-	/// </summary>
+	// Return type is now the two possible success shapes: a small JSON PrintResponse
+	// for file-based output, or the raw PDF bytes directly for inline output. The
+	// ProducesResponseType(typeof(PrintResponse)) attribute below is now only
+	// accurate for the file-based case — Swagger doesn't cleanly express "one of
+	// two different content types depending on the request" in a single attribute,
+	// so this is a minor, accepted imprecision in the generated API doc.
 	[HttpPost("generate")]
 	[ProducesResponseType(typeof(PrintResponse), StatusCodes.Status200OK)]
 	[ProducesResponseType(StatusCodes.Status400BadRequest)]
 	[ProducesResponseType(StatusCodes.Status500InternalServerError)]
-	public async Task<ActionResult<PrintResponse>> Generate(
+	public async Task<IActionResult> Generate(
 		[FromBody] PrintRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -66,7 +68,19 @@ public sealed class PrintController : ControllerBase
 		try
 		{
 			PdfRenderResult result = await _renderer.RenderAsync(request, cancellationToken);
-			return Ok(new PrintResponse { Base64Document = result.Base64Document, PdfPath = result.PdfPath });
+
+			if (result.PdfPath is not null)
+			{
+				// File-based output — small JSON response, unaffected by the large-payload issue.
+				return Ok(new PrintResponse { PdfPath = result.PdfPath });
+			}
+
+			// Inline output — raw PDF bytes directly as the response body, not JSON-wrapped.
+			// Avoids System.Text.Json's hard limit on individual string-value length, which a
+			// base64-encoded large PDF (previously wrapped in a JSON field) could exceed —
+			// this is exactly what threw "The JSON value of length ... is too large" under
+			// stress testing with a ~128MB PDF.
+			return File(result.PdfBytes!, "application/pdf");
 		}
 		catch (ArgumentException ex)
 		{

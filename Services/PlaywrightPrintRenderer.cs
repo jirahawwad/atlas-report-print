@@ -132,7 +132,7 @@ public sealed class PlaywrightPrintRenderer(
 				return new PdfRenderResult { PdfPath = pdfPath };
 			}
 
-			return new PdfRenderResult { Base64Document = Convert.ToBase64String(pdfBytes) };
+			return new PdfRenderResult { PdfBytes = pdfBytes };
 		}
 		catch (Exception ex)
 		{

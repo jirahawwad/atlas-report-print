@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=notify
+KillMode=process
 WorkingDirectory=/global/toh/atlas-report-print/app
 ExecStart=/usr/bin/dotnet /global/toh/atlas-report-print/app/Atlas.Report.Print.dll
 Restart=on-failure

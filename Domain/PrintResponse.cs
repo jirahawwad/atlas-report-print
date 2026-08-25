@@ -8,9 +8,9 @@ namespace Atlas.Report.Print.Domain;
 /// </summary>
 public sealed class PrintResponse
 {
-	/// <summary>Base64-encoded PDF content. Set when the request did not provide a JobDirectory+PdfFile output path.</summary>
-	public string? Base64Document { get; init; }
-
+	// Base64Document removed — inline requests now return raw PDF bytes directly as
+	// the HTTP response body (Content-Type: application/pdf), not wrapped in JSON.
+	// This DTO is now only used for the file-based output mode's small JSON response.
 	/// <summary>Absolute path where the PDF was written. Set when the request provided a JobDirectory+PdfFile output path.</summary>
 	public string? PdfPath { get; init; }
 }
