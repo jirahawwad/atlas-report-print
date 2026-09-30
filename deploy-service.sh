@@ -2,8 +2,7 @@
 # Installs/updates the atlas-report-print systemd unit from this publish folder,
 # then reloads systemd so it picks up the change.
 #
-# Run with sudo, from the directory containing the published app files
-# (i.e. wherever atlas-report-print-{DEV,QA,PROD}.service was published to):
+# Run with sudo, from the directory containing the published app files:
 #   sudo ./deploy-service.sh
 
 set -e
@@ -15,24 +14,25 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Each environment's publish output contains exactly one atlas-report-print-*.service
-# file (DEV, QA, or PROD) — no need to specify which environment this is.
-SERVICE_FILE=$(find "$SCRIPT_DIR" -maxdepth 1 -name "atlas-report-print-*.service" | head -n1)
+# Search recursively (removing -maxdepth 1) so it works whether executed 
+# from outside the version folder or directly inside it.
+SERVICE_FILE=$(find "$SCRIPT_DIR" -name "atlas-report-print-*.service" | head -n1)
 
 if [ -z "$SERVICE_FILE" ]; then
   echo "No atlas-report-print-*.service file found in $SCRIPT_DIR — is this a published output folder?"
   exit 1
 fi
 
+# Dynamically set the working directory context to wherever the service file lives
+APP_DIR=$(dirname "$SERVICE_FILE")
+
 echo "Installing $(basename "$SERVICE_FILE") as /etc/systemd/system/atlas-report-print.service"
 cp "$SERVICE_FILE" /etc/systemd/system/atlas-report-print.service
 
-# Windows-built publish output loses the Unix executable bit on transfer —
-# Playwright's bundled Node.js driver under .playwright/ needs it restored,
-# every time, or BrowserPool.StartAsync() fails with Win32Exception (13) EACCES.
-if [ -d "$SCRIPT_DIR/.playwright" ]; then
-  echo "Restoring execute permissions on Playwright's bundled driver..."
-  chmod -R +x "$SCRIPT_DIR/.playwright"
+# Restores Unix executable bits on Playwright's bundled Node.js drivers inside the correct directory context
+if [ -d "$APP_DIR/.playwright" ]; then
+  echo "Restoring execute permissions on Playwright's bundled driver at $APP_DIR/.playwright ..."
+  chmod -R +x "$APP_DIR/.playwright"
 fi
 
 systemctl daemon-reload

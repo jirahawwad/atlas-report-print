@@ -7,6 +7,7 @@
 		<RootNamespace>Atlas.Report.Print</RootNamespace>
 		<AssemblyName>Atlas.Report.Print</AssemblyName>
 		<Configurations>LOCAL;DEV;QA;PROD</Configurations>
+		<Version>1.0.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -38,5 +39,77 @@
 		      CopyToPublishDirectory="Always"
 		      Condition="Exists('atlas-report-print-$(Configuration).service')" />
 	</ItemGroup>
+
+	<!-- The Optimized Cross-Platform Publish Target -->
+	<Target Name="ZipPublishFolder" AfterTargets="AfterPublish">
+		<PropertyGroup>
+			<!-- Favor the profile's PublishUrl if it exists, otherwise fall back to PublishDir -->
+			<ActualPublishDir Condition="'$(PublishUrl)' != ''">$(PublishUrl)</ActualPublishDir>
+			<ActualPublishDir Condition="'$(PublishUrl)' == ''">$(PublishDir)</ActualPublishDir>
+			<!-- Clean trailing slashes so Path methods behave consistently -->
+			<CleanPublishDir>$(ActualPublishDir.TrimEnd('\').TrimEnd('/'))</CleanPublishDir>
+
+			<!-- Dynamically grab the exact environment folder name (e.g., 'prod', 'dev', 'qa') -->
+			<PublishEnvName>$([System.IO.Path]::GetFileName('$(CleanPublishDir)'))</PublishEnvName>
+
+			<!-- Establish the strict base project publish folder path (e.g., c:\...\project\publish\) -->
+			<ProjectPublishDir>$(ProjectDir)publish\</ProjectPublishDir>
+			<ProjectPublishDir>$([MSBuild]::EnsureTrailingSlash('$(ProjectPublishDir)'))</ProjectPublishDir>
+
+			<!-- Temporary staging directory to build the root version folder structure -->
+			<StagingDir>$(ProjectPublishDir)staging_$(PublishEnvName)\</StagingDir>
+			<StagingVersionDir>$(StagingDir)$(Version)\</StagingVersionDir>
+
+			<!-- Set the exact requested output naming structure -->
+			<ZipFileName>atlas-report-print-$(PublishEnvName)-$(Version).zip</ZipFileName>
+			<MetadataFileName>atlas-report-print-$(PublishEnvName)-$(Version)-metadata.txt</MetadataFileName>
+
+			<!-- Force outputs directly into the main project publish folder -->
+			<ZipFile>$(ProjectPublishDir)$(ZipFileName)</ZipFile>
+			<MetadataFile>$(ProjectPublishDir)$(MetadataFileName)</MetadataFile>
+		</PropertyGroup>
+
+		<!-- 1. Ensure clean directory slates and remove old outputs if they exist -->
+		<RemoveDir Directories="$(StagingDir)" Condition="Exists('$(StagingDir)')" />
+		<MakeDir Directories="$(StagingVersionDir)" />
+		<Delete Files="$(ZipFile)" Condition="Exists('$(ZipFile)')" />
+		<Delete Files="$(MetadataFile)" Condition="Exists('$(MetadataFile)')" />
+
+		<!-- 2. Fix Line Endings: Convert Windows CRLF to Linux LF for scripts and services before archiving -->
+		<Exec Command="powershell -NoProfile -Command &quot;Get-ChildItem '$(CleanPublishDir)' -Recurse | Where-Object { $_.Extension -match '^\.(sh|service)$' } | ForEach-Object { $content = Get-Content $_.FullName -Raw; if ($content) { $content -replace '\r\n', [string][char]10 | Set-Content $_.FullName -NoNewline } }&quot;" />
+
+		<!-- 3. Stage the files into the root version folder structure -->
+		<ItemGroup>
+			<PublishFiles Include="$(CleanPublishDir)\**\*.*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(PublishFiles)" DestinationFolder="$(StagingVersionDir)%(RecursiveDir)" />
+
+		<!-- 4. Create the ZIP targeting the staging directory using MSBuild's native engine -->
+		<ZipDirectory SourceDirectory="$(StagingDir)" DestinationFile="$(ZipFile)" Overwrite="true" />
+
+		<!-- 5. Calculate SHA256 using PowerShell since we are running Visual Studio on Windows -->
+		<Exec Command="powershell -NoProfile -Command &quot;(Get-FileHash '$(ZipFile)' -Algorithm SHA256).Hash.ToLower()&quot;" ConsoleToMSBuild="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="ZipHash" />
+		</Exec>
+
+		<!-- 6. Generate Metadata File natively in the top-level folder -->
+		<ItemGroup>
+			<MetadataLines Include="Configuration: $(Configuration)" />
+			<MetadataLines Include="Environment: $(PublishEnvName)" />
+			<MetadataLines Include="Version: $(Version)" />
+			<MetadataLines Include="BuildTimestampUtc: $([System.DateTime]::UtcNow.ToString('o'))" />
+			<MetadataLines Include="ZipFile: $(ZipFileName)" />
+			<MetadataLines Include="SHA256: $(ZipHash)" />
+		</ItemGroup>
+
+		<WriteLinesToFile File="$(MetadataFile)" Lines="@(MetadataLines)" Overwrite="true" />
+
+		<!-- 7. Clean up staging folders and original transient source files -->
+		<RemoveDir Directories="$(StagingDir)" />
+		<RemoveDir Directories="$(ActualPublishDir)" />
+
+		<Message Importance="high" Text="[ZipPublishFolder] Success! Created '$(ZipFile)' with a nested version folder. Cleaned up transient files." />
+	</Target>
+
 
 </Project>
